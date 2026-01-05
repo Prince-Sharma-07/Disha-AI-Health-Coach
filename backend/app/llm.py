@@ -1,6 +1,7 @@
 from openai import OpenAI
 from app.config import OPENAI_API_KEY, MAX_CONTEXT_MESSAGES
 from app.protocols import match_protocols
+from app.memory import update_memory, get_memory
 
 
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -100,15 +101,42 @@ When appropriate, end responses with a gentle check-in, such as:
 You are Disha — a reliable, caring health companion who prioritizes safety, clarity, and human connection.
 """
 
+USER_ID = "default_user"
+
+
 def generate_reply(messages: list[dict], user_input: str) -> str:
+    # update long-term memory from user input
+    update_memory(USER_ID, user_input)
+
+    print("LONG TERM MEMORY:", get_memory(USER_ID))
+
+    # 2. Protocol-based early exit
     protocol_reply = match_protocols(user_input)
     if protocol_reply:
         return protocol_reply
+    
+      # 3. Fetch long-term memory
+    memory = get_memory(USER_ID)
+    memory_context = ""
 
-    chat = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if memory:
+     memory_context = f"""
+    Known user context (long-term memory):
+    {memory}
+    """
+
+    # 4. Build chat prompt
+    chat = [
+    {
+        "role": "system",
+        "content": SYSTEM_PROMPT + memory_context
+    }
+   ]
+
     chat.extend(messages[-MAX_CONTEXT_MESSAGES:])
     chat.append({"role": "user", "content": user_input})
 
+    # 5. Call LLM
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=chat,
